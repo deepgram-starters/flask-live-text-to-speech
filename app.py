@@ -170,6 +170,43 @@ def serve_index():
     return app.send_static_file("index.html")
 
 
+@app.route("/api/metadata", methods=["GET"])
+def get_metadata():
+    """
+    GET /api/metadata
+
+    Returns metadata about this starter application from deepgram.toml
+    Required for standardization compliance
+    """
+    try:
+        import toml
+        from flask import jsonify
+
+        with open('deepgram.toml', 'r') as f:
+            config = toml.load(f)
+
+        if 'meta' not in config:
+            return jsonify({
+                'error': 'INTERNAL_SERVER_ERROR',
+                'message': 'Missing [meta] section in deepgram.toml'
+            }), 500
+
+        return jsonify(config['meta']), 200
+
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'INTERNAL_SERVER_ERROR',
+            'message': 'deepgram.toml file not found'
+        }), 500
+
+    except Exception as e:
+        print(f"Error reading metadata: {e}")
+        return jsonify({
+            'error': 'INTERNAL_SERVER_ERROR',
+            'message': f'Failed to read metadata from deepgram.toml: {str(e)}'
+        }), 500
+
+
 def run_ui():
     app.run(debug=True, use_reloader=False)
 
