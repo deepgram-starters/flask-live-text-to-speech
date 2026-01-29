@@ -70,8 +70,9 @@ make start
 ## Architecture
 
 ### Backend
+- **Flask Server**: Serves static files and handles HTTP routes (port 5000)
+- **WebSocket Server**: Standalone WebSocket server (using `websockets` library) running on port 8080
 - **WebSocket Proxy**: Bidirectional streaming to Deepgram's Live TTS API
-- Flask-SocketIO server with WebSocket endpoint: `/tts/stream`
 - Proxies to Vite dev server in development mode
 
 ### Frontend
@@ -81,7 +82,7 @@ make start
 
 ## How It Works
 
-- **Backend** (`app.py`): Flask-SocketIO server implementing the `/tts/stream` WebSocket endpoint
+- **Backend** (`app.py`): Flask serves static files; standalone WebSocket server handles TTS streaming on port 8080
 - **Frontend** (`frontend/`): Vite-powered web UI (shared submodule)
 - **API**: Integrates with [Deepgram's Live Text-to-Speech API](https://developers.deepgram.com/)
 
@@ -115,14 +116,11 @@ This project implements security best practices including:
 - Automated vulnerability scanning with Snyk
 - Environment variable management
 
-See [SECURITY.md](./.github/SECURITY.md) for complete security documentation and reporting procedures.
-
 ## Contributing
 
 Contributions are welcome! Please review:
 - [Contributing Guidelines](./.github/CONTRIBUTING.md)
 - [Code of Conduct](./.github/CODE_OF_CONDUCT.md)
-- [Security Policy](./.github/SECURITY.md)
 
 ## License
 
