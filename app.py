@@ -166,7 +166,7 @@ def run_ui():
 
 
 def run_ws():
-    with serve(hello, "localhost", 3000) as server:
+    with serve(hello, "localhost", 8080) as server:
         server.serve_forever()
 
 
