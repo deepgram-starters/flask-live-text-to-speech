@@ -14,7 +14,6 @@ Key Features:
 
 import os
 import json
-import time
 import threading
 from flask import Flask, request, jsonify
 from flask_sock import Sock
@@ -153,7 +152,6 @@ def live_tts(ws):
 
     # Track connection state
     connected = False
-    last_header_time = time.time() - 5
     stop_event = threading.Event()
 
     # Initialize Deepgram client
@@ -166,36 +164,7 @@ def live_tts(ws):
             print("✓ Connected to Deepgram TTS API")
 
         def on_binary_data(self, data, **kwargs):
-            """Forward binary audio data to client"""
-            nonlocal last_header_time
-
-            # Send WAV header every 3 seconds for first chunk
-            if time.time() - last_header_time > 3:
-                print("Sending WAV header")
-                # WAV header for linear16, 48kHz, mono
-                header = bytes([
-                    0x52, 0x49, 0x46, 0x46,  # "RIFF"
-                    0x00, 0x00, 0x00, 0x00,  # Placeholder for file size
-                    0x57, 0x41, 0x56, 0x45,  # "WAVE"
-                    0x66, 0x6D, 0x74, 0x20,  # "fmt "
-                    0x10, 0x00, 0x00, 0x00,  # Chunk size (16)
-                    0x01, 0x00,              # Audio format (1 for PCM)
-                    0x01, 0x00,              # Number of channels (1)
-                    0x80, 0xBB, 0x00, 0x00,  # Sample rate (48000)
-                    0x00, 0xEE, 0x02, 0x00,  # Byte rate (48000 * 2)
-                    0x02, 0x00,              # Block align (2)
-                    0x10, 0x00,              # Bits per sample (16)
-                    0x64, 0x61, 0x74, 0x61,  # "data"
-                    0x00, 0x00, 0x00, 0x00,  # Placeholder for data size
-                ])
-                try:
-                    ws.send(header)
-                except Exception as e:
-                    print(f"Error sending header: {e}")
-                    return
-                last_header_time = time.time()
-
-            # Send audio data
+            """Forward binary audio data from Deepgram to client"""
             try:
                 ws.send(data)
             except Exception as e:
