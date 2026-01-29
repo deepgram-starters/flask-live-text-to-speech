@@ -1,2 +1,3 @@
 Flask==3.0.3
 deepgram-sdk==3.*
+websockets==14.1
