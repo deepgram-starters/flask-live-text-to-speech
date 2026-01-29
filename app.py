@@ -1,22 +1,41 @@
-import json
-import multiprocessing
-import time
-import platform
+"""
+Flask Live Text-to-Speech Starter - Backend Server
+
+This Flask server provides a WebSocket endpoint for live text-to-speech
+powered by Deepgram's Live TTS API. It streams audio data back to the client
+in real-time as text is synthesized.
+
+Key Features:
+- WebSocket endpoint: /tts/stream
+- Accepts JSON text messages from frontend
+- Returns binary audio stream
+- Serves built frontend from frontend/dist/
+"""
+
 import os
-
-from websockets.sync.server import serve
-from flask import Flask, send_from_directory
-from dotenv import load_dotenv
-
+import json
+import time
+import threading
+from flask import Flask, request, jsonify
+from flask_sock import Sock
+from flask_cors import CORS
 from deepgram import (
     DeepgramClient,
-    DeepgramClientOptions,
     SpeakWSOptions,
     SpeakWebSocketEvents,
 )
+from dotenv import load_dotenv
+import toml
 
 # Load .env file (won't override existing environment variables)
 load_dotenv(override=False)
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+DEFAULT_MODEL = "aura-asteria-en"
+DEFAULT_PORT = 8080
 
 # ============================================================================
 # API KEY VALIDATION
@@ -44,161 +63,33 @@ def validate_api_key():
 # Validate on startup
 API_KEY = validate_api_key()
 
+# ============================================================================
+# SETUP - Initialize Flask, WebSocket, and CORS
+# ============================================================================
 
-# Determine static folder based on environment
-NODE_ENV = os.getenv("NODE_ENV", "development")
-if NODE_ENV == "production":
-    static_folder = "./frontend/dist"
-else:
-    # In development, serve from frontend root for Vite HMR
-    static_folder = "./frontend"
+# Initialize Flask app - serve built frontend from frontend/dist/
+app = Flask(__name__, static_folder="./frontend/dist", static_url_path="/")
 
-# Flask App
-app = Flask(__name__, static_folder=static_folder, static_url_path="")
+# Enable CORS for development (allows Vite dev server to connect)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",  # In production, restrict to your domain
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": True
+    }
+})
 
+# Initialize native WebSocket support
+sock = Sock(app)
 
-def hello(websocket):
-    # Deepgram TTS WS connection
-    connected = False
-    deepgram = DeepgramClient(api_key=API_KEY)
-    dg_connection = deepgram.speak.websocket.v("1")
+# ============================================================================
+# HTTP ROUTES
+# ============================================================================
 
-    global last_time
-    last_time = time.time() - 5
-
-    def on_open(self, open, **kwargs):
-        print(f"\n\n{open}\n\n")
-
-    def on_flush(self, flushed, **kwargs):
-        print(f"\n\n{flushed}\n\n")
-        flushed_str = str(flushed)
-        websocket.send(flushed_str)
-
-    def on_binary_data(self, data, **kwargs):
-        print("Received binary data")
-
-        global last_time
-        if time.time() - last_time > 3:
-            print("------------ [Binary Data] Attach header.\n")
-
-            # Add a wav audio container header to the file if you want to play the audio
-            # using the AudioContext or media player like VLC, Media Player, or Apple Music
-            # Without this header in the Chrome browser case, the audio will not play.
-            header = bytes(
-                [
-                    0x52,
-                    0x49,
-                    0x46,
-                    0x46,  # "RIFF"
-                    0x00,
-                    0x00,
-                    0x00,
-                    0x00,  # Placeholder for file size
-                    0x57,
-                    0x41,
-                    0x56,
-                    0x45,  # "WAVE"
-                    0x66,
-                    0x6D,
-                    0x74,
-                    0x20,  # "fmt "
-                    0x10,
-                    0x00,
-                    0x00,
-                    0x00,  # Chunk size (16)
-                    0x01,
-                    0x00,  # Audio format (1 for PCM)
-                    0x01,
-                    0x00,  # Number of channels (1)
-                    0x80,
-                    0xBB,
-                    0x00,
-                    0x00,  # Sample rate (48000)
-                    0x00,
-                    0xEE,
-                    0x02,
-                    0x00,  # Byte rate (48000 * 2)
-                    0x02,
-                    0x00,  # Block align (2)
-                    0x10,
-                    0x00,  # Bits per sample (16)
-                    0x64,
-                    0x61,
-                    0x74,
-                    0x61,  # "data"
-                    0x00,
-                    0x00,
-                    0x00,
-                    0x00,  # Placeholder for data size
-                ]
-            )
-            websocket.send(header)
-            last_time = time.time()
-
-        websocket.send(data)
-
-    def on_close(self, close, **kwargs):
-        print(f"\n\n{close}\n\n")
-
-    dg_connection.on(SpeakWebSocketEvents.Open, on_open)
-    dg_connection.on(SpeakWebSocketEvents.AudioData, on_binary_data)
-    dg_connection.on(SpeakWebSocketEvents.Flushed, on_flush)
-    dg_connection.on(SpeakWebSocketEvents.Close, on_close)
-
-    try:
-        while True:
-            message = websocket.recv()
-            print(f"message from UI: {message}")
-
-            data = json.loads(message)
-            text = data.get("text")
-            model = data.get("model")
-
-            if not text:
-                if app.debug:
-                    app.logger.debug("You must supply text to synthesize.")
-                continue
-
-            if not model:
-                model = "aura-2-thalia-en"
-
-            # Are we connected to the Deepgram TTS WS?
-            if connected is False:
-                options: SpeakWSOptions = SpeakWSOptions(
-                    model=model,
-                    encoding="linear16",
-                    sample_rate=48000,
-                )
-
-                if dg_connection.start(options) is False:
-                    if app.debug:
-                        app.logger.debug(
-                            "Unable to start Deepgram TTS WebSocket connection"
-                        )
-                    raise Exception("Unable to start Deepgram TTS WebSocket connection")
-                connected = True
-
-            dg_connection.send_text(text)
-            dg_connection.flush()
-
-    except Exception as e:
-        dg_connection.finish()
-
-
-@app.route("/<path:filename>")
-def serve_others(filename):
-    return send_from_directory(app.static_folder, filename)
-
-
-@app.route("/assets/<path:filename>")
-def serve_image(filename):
-    return send_from_directory(app.static_folder, "assets/" + filename)
-
-
-@app.route("/", methods=["GET"])
-def serve_index():
+@app.route("/")
+def index():
+    """Serve the main frontend HTML file"""
     return app.send_static_file("index.html")
-
 
 @app.route("/api/metadata", methods=["GET"])
 def get_metadata():
@@ -209,9 +100,6 @@ def get_metadata():
     Required for standardization compliance
     """
     try:
-        import toml
-        from flask import jsonify
-
         with open('deepgram.toml', 'r') as f:
             config = toml.load(f)
 
@@ -236,37 +124,187 @@ def get_metadata():
             'message': f'Failed to read metadata from deepgram.toml: {str(e)}'
         }), 500
 
+# ============================================================================
+# WEBSOCKET ENDPOINT
+# ============================================================================
 
-def run_ui():
-    port = int(os.environ.get("PORT", 8080))
+@sock.route('/tts/stream')
+def live_tts(ws):
+    """
+    WebSocket endpoint for live text-to-speech
+
+    Query parameters:
+    - model: Deepgram TTS model (default: aura-asteria-en)
+    - encoding: Audio encoding (default: linear16)
+    - sample_rate: Sample rate in Hz (default: 48000)
+    - container: Audio container format (default: none)
+
+    The client sends JSON messages with "text" field and receives binary audio data.
+    """
+    print("Client connected to /tts/stream")
+
+    # Get query parameters from request
+    model = request.args.get('model', DEFAULT_MODEL)
+    encoding = request.args.get('encoding', 'linear16')
+    sample_rate = int(request.args.get('sample_rate', 48000))
+    container = request.args.get('container', 'none')
+
+    print(f"TTS Config - model: {model}, encoding: {encoding}, sample_rate: {sample_rate}")
+
+    # Track connection state
+    connected = False
+    last_header_time = time.time() - 5
+    stop_event = threading.Event()
+
+    # Initialize Deepgram client
+    try:
+        deepgram = DeepgramClient(api_key=API_KEY)
+        dg_connection = deepgram.speak.websocket.v("1")
+
+        # Event handlers for Deepgram connection
+        def on_open(self, open_event, **kwargs):
+            print("✓ Connected to Deepgram TTS API")
+
+        def on_binary_data(self, data, **kwargs):
+            """Forward binary audio data to client"""
+            nonlocal last_header_time
+
+            # Send WAV header every 3 seconds for first chunk
+            if time.time() - last_header_time > 3:
+                print("Sending WAV header")
+                # WAV header for linear16, 48kHz, mono
+                header = bytes([
+                    0x52, 0x49, 0x46, 0x46,  # "RIFF"
+                    0x00, 0x00, 0x00, 0x00,  # Placeholder for file size
+                    0x57, 0x41, 0x56, 0x45,  # "WAVE"
+                    0x66, 0x6D, 0x74, 0x20,  # "fmt "
+                    0x10, 0x00, 0x00, 0x00,  # Chunk size (16)
+                    0x01, 0x00,              # Audio format (1 for PCM)
+                    0x01, 0x00,              # Number of channels (1)
+                    0x80, 0xBB, 0x00, 0x00,  # Sample rate (48000)
+                    0x00, 0xEE, 0x02, 0x00,  # Byte rate (48000 * 2)
+                    0x02, 0x00,              # Block align (2)
+                    0x10, 0x00,              # Bits per sample (16)
+                    0x64, 0x61, 0x74, 0x61,  # "data"
+                    0x00, 0x00, 0x00, 0x00,  # Placeholder for data size
+                ])
+                try:
+                    ws.send(header)
+                except Exception as e:
+                    print(f"Error sending header: {e}")
+                    return
+                last_header_time = time.time()
+
+            # Send audio data
+            try:
+                ws.send(data)
+            except Exception as e:
+                print(f"Error sending audio data: {e}")
+                stop_event.set()
+
+        def on_flush(self, flushed, **kwargs):
+            """Handle flush events from Deepgram"""
+            print(f"Flushed: {flushed}")
+
+        def on_close(self, close_event, **kwargs):
+            """Handle Deepgram connection close"""
+            print("Deepgram TTS connection closed")
+            stop_event.set()
+
+        def on_error(self, error, **kwargs):
+            """Handle errors from Deepgram"""
+            print(f"Deepgram TTS error: {error}")
+            stop_event.set()
+
+        # Register event handlers
+        dg_connection.on(SpeakWebSocketEvents.Open, on_open)
+        dg_connection.on(SpeakWebSocketEvents.AudioData, on_binary_data)
+        dg_connection.on(SpeakWebSocketEvents.Flushed, on_flush)
+        dg_connection.on(SpeakWebSocketEvents.Close, on_close)
+        dg_connection.on(SpeakWebSocketEvents.Error, on_error)
+
+        # Process messages from client
+        while not stop_event.is_set():
+            try:
+                # Receive message from client (with timeout)
+                message = ws.receive(timeout=0.1)
+                if message is None:
+                    continue
+
+                print(f"Received from client: {message[:100]}...")
+
+                # Parse JSON message
+                try:
+                    data = json.loads(message)
+                    text = data.get('text')
+                    msg_model = data.get('model', model)
+
+                    if not text:
+                        print("No text provided in message")
+                        continue
+
+                    # Start connection if not already connected
+                    if not connected:
+                        options = SpeakWSOptions(
+                            model=msg_model,
+                            encoding=encoding,
+                            sample_rate=sample_rate,
+                        )
+
+                        if not dg_connection.start(options):
+                            print("Failed to start Deepgram TTS connection")
+                            ws.close(1011, "Failed to connect to Deepgram")
+                            break
+
+                        connected = True
+                        print(f"✓ Started Deepgram TTS connection with model: {msg_model}")
+
+                    # Send text to Deepgram
+                    dg_connection.send_text(text)
+                    dg_connection.flush()
+
+                except json.JSONDecodeError:
+                    print(f"Invalid JSON received: {message}")
+                    continue
+
+            except Exception as e:
+                if "timeout" not in str(e).lower():
+                    print(f"Error in message loop: {e}")
+                    break
+
+    except Exception as e:
+        print(f"Error setting up TTS connection: {e}")
+        try:
+            ws.close(1011, "Internal server error")
+        except:
+            pass
+        return
+
+    finally:
+        # Cleanup
+        print("Cleaning up TTS connection")
+        try:
+            if connected:
+                dg_connection.finish()
+        except Exception as e:
+            print(f"Error finishing connection: {e}")
+
+        print("Client disconnected from /tts/stream")
+
+# ============================================================================
+# SERVER START
+# ============================================================================
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", DEFAULT_PORT))
     host = os.environ.get("HOST", "0.0.0.0")
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
     print("\n" + "=" * 70)
     print(f"🚀 Flask Live Text-to-Speech Server running at http://localhost:{port}")
-    print(f"📦 Serving frontend from {app.static_folder}")
-    print(f"🔌 WebSocket endpoint: ws://localhost:8081/")
+    print(f"📦 Serving built frontend from frontend/dist")
+    print(f"🔌 WebSocket endpoint: ws://localhost:{port}/tts/stream")
     print(f"🐞 Debug mode: {'ON' if debug else 'OFF'}")
     print("=" * 70 + "\n")
 
-    app.run(host=host, port=port, debug=debug, use_reloader=False)
-
-
-def run_ws():
-    ws_port = int(os.environ.get("WS_PORT", 8081))
-    with serve(hello, "0.0.0.0", ws_port) as server:
-        server.serve_forever()
-
-
-if __name__ == "__main__":
-    if platform.system() == "Darwin":
-        multiprocessing.set_start_method("fork")
-
-    p_flask = multiprocessing.Process(target=run_ui)
-    p_ws = multiprocessing.Process(target=run_ws)
-
-    p_flask.start()
-    p_ws.start()
-
-    p_flask.join()
-    p_ws.join()
+    app.run(host=host, port=port, debug=debug)
