@@ -2,6 +2,7 @@ import json
 import multiprocessing
 import time
 import platform
+import os
 
 from websockets.sync.server import serve
 from flask import Flask, send_from_directory
@@ -14,8 +15,16 @@ from deepgram import (
 )
 
 
+# Determine static folder based on environment
+NODE_ENV = os.getenv("NODE_ENV", "development")
+if NODE_ENV == "production":
+    static_folder = "./frontend/dist"
+else:
+    # In development, serve from frontend root for Vite HMR
+    static_folder = "./frontend"
+
 # Flask App
-app = Flask(__name__, static_folder="./public", static_url_path="/public")
+app = Flask(__name__, static_folder=static_folder, static_url_path="")
 
 
 def hello(websocket):
