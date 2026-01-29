@@ -6,6 +6,7 @@ import os
 
 from websockets.sync.server import serve
 from flask import Flask, send_from_directory
+from dotenv import load_dotenv
 
 from deepgram import (
     DeepgramClient,
@@ -13,6 +14,35 @@ from deepgram import (
     SpeakWSOptions,
     SpeakWebSocketEvents,
 )
+
+# Load .env file (won't override existing environment variables)
+load_dotenv(override=False)
+
+# ============================================================================
+# API KEY VALIDATION
+# ============================================================================
+
+def validate_api_key():
+    """Validates that the Deepgram API key is configured"""
+    api_key = os.environ.get("DEEPGRAM_API_KEY")
+
+    if not api_key:
+        print("\n" + "="*70)
+        print("ERROR: Deepgram API key not found!")
+        print("="*70)
+        print("\nPlease set your API key using one of these methods:")
+        print("\n1. Create a .env file (recommended):")
+        print("   DEEPGRAM_API_KEY=your_api_key_here")
+        print("\n2. Environment variable:")
+        print("   export DEEPGRAM_API_KEY=your_api_key_here")
+        print("\nGet your API key at: https://console.deepgram.com")
+        print("="*70 + "\n")
+        raise ValueError("DEEPGRAM_API_KEY environment variable is required")
+
+    return api_key
+
+# Validate on startup
+API_KEY = validate_api_key()
 
 
 # Determine static folder based on environment
@@ -30,7 +60,7 @@ app = Flask(__name__, static_folder=static_folder, static_url_path="")
 def hello(websocket):
     # Deepgram TTS WS connection
     connected = False
-    deepgram = DeepgramClient()
+    deepgram = DeepgramClient(api_key=API_KEY)
     dg_connection = deepgram.speak.websocket.v("1")
 
     global last_time
