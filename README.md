@@ -1,97 +1,129 @@
 # Flask Live Text-to-Speech Starter
 
-[![Discord](https://dcbadge.vercel.app/api/server/xWRaCDBtW4?style=flat)](https://discord.gg/xWRaCDBtW4)
+Live text-to-speech demo using Deepgram's API with Python Flask backend and web frontend.
 
-This example app demonstrates how to use the Deepgram Text-to-Speech API over WebSockets with Flask/Python.
+## Prerequisites
 
-The flow of this sample is:
+- [Deepgram API Key](https://console.deepgram.com/signup?jump=keys) (sign up for free)
+- Python 3.9+
+- pnpm 10+ (for frontend)
 
-1. A websocket is opened from the UI to the backend Flask component
-1. Text is sent over a websocket to the backend component
-1. If a connection has not been established to Deepgram, create a websocket connection using the Python SDK and send the text to convert to audio
-1. An audio byte response with synthesized text-to-speech is returned and forward back through the WebSocket created by the UI
-1. Those audio bytes are then played by the media device contained within your browser
+**Note:** This project uses git submodules for the frontend.
 
-<img src="/public/assets/preview-starter.png" alt="A preview of the app" style="width: 400px; height: auto; border-radius: 10px; margin-top: 20px;">
+## Quick Start
 
-## What is Deepgram?
+1. **Clone the repository**
 
-[Deepgram’s](https://deepgram.com/) voice AI platform provides APIs for speech-to-text, text-to-speech, and full speech-to-speech voice agents. Over 200,000+ developers use Deepgram to build voice AI products and features.
-
-## Sign-up to Deepgram
-
-Before you start, it's essential to generate a Deepgram API key to use in this project. [Sign-up now for Deepgram and create an API key](https://console.deepgram.com/signup?jump=keys).
-
-## Quickstart
-
-### Manual
-
-Follow these steps to get started with this starter application.
-
-#### Clone the repository
-
-Go to GitHub and [clone the repository](https://github.com/deepgram-starters/flask-live-text-to-speech).
-
-#### Install dependencies
-
-Install the project dependencies.
+Clone the repository with submodules (the frontend is a shared submodule):
 
 ```bash
+git clone --recurse-submodules https://github.com/deepgram-starters/flask-live-text-to-speech.git
+cd flask-live-text-to-speech
+```
+
+2. **Install dependencies**
+
+```bash
+# Option 1: Use Makefile (recommended)
+make init
+
+# Option 2: Manual install
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+cd frontend && pnpm install && cd ..
 ```
 
-#### Set your Deepgram API key
+3. **Set your API key**
 
-If using bash, this can be done in your `~/.bash_profile` like so:
+Create a `.env` file:
 
 ```bash
-export DEEPGRAM_API_KEY="YOUR_DEEPGRAM_API_KEY"
+DEEPGRAM_API_KEY=your_api_key_here
 ```
 
-#### Run the Flask Application
+4. **Run the app**
 
-If you have set your `DEEPGRAM_API_KEY` environment variable, start the Backend go application using this command:
+**Development mode** (with hot reload):
 
 ```bash
-python app.py
+make dev
 ```
 
-If you haven't, this could also be done by a simple export before executing your Go application:
+**Production mode** (build and serve):
 
 ```bash
-DEEPGRAM_API_KEY="YOUR_DEEPGRAM_API_KEY" python app.py
+make build
+make start
 ```
 
-This will start both the Frontend UI and Backend Component. You should see output like this:
+### 🌐 Open the App
+[http://localhost:8080](http://localhost:8080)
+
+## Features
+
+- Real-time text-to-speech with live audio playback
+- Interactive text input
+- Configurable voice models
+- Connection statistics
+
+## Architecture
+
+### Backend
+- **WebSocket Proxy**: Bidirectional streaming to Deepgram's Live TTS API
+- Flask-SocketIO server with WebSocket endpoint: `/tts/stream`
+- Proxies to Vite dev server in development mode
+
+### Frontend
+- Real-time audio streaming and playback
+- Pure vanilla JavaScript (no frameworks)
+- Deepgram Design System for styling
+
+## How It Works
+
+- **Backend** (`app.py`): Flask-SocketIO server implementing the `/tts/stream` WebSocket endpoint
+- **Frontend** (`frontend/`): Vite-powered web UI (shared submodule)
+- **API**: Integrates with [Deepgram's Live Text-to-Speech API](https://developers.deepgram.com/)
+
+## Makefile Commands
+
+This project includes a Makefile for framework-agnostic operations:
 
 ```bash
- * Serving Flask app 'app'
- * Debug mode: on
-WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
- * Running on http://127.0.0.1:5000
-Press CTRL+C to quit
-
-
+make help              # Show all available commands
+make init              # Initialize submodules and install dependencies
+make dev               # Start development servers
+make build             # Build frontend for production
+make start             # Start production server
+make update            # Update submodules to latest
+make clean             # Remove venv, node_modules and build artifacts
+make status            # Show git and submodule status
 ```
 
-Copy and paste the URL with port (ie `http://127.0.0.1:5000`) into your web browser to start converting text into audio!
-
-## Issue Reporting
-
-If you have found a bug or if you have a feature request, please report them at this repository issues section. Please do not report security vulnerabilities on the public GitHub issue tracker. The [Security Policy](./SECURITY.md) details the procedure for contacting Deepgram.
+Use `make` commands for a consistent experience regardless of language.
 
 ## Getting Help
 
-We love to hear from you so if you have questions, comments or find a bug in the project, let us know! You can either:
+- [Open an issue](https://github.com/deepgram-starters/flask-live-text-to-speech/issues/new)
+- [Join our Discord](https://discord.gg/xWRaCDBtW4)
+- [Deepgram Documentation](https://developers.deepgram.com/)
 
-- [Open an issue in this repository](https://github.com/deepgram-starters/flask-live-text-to-speech/issues/new)
-- [Join the Deepgram Github Discussions Community](https://github.com/orgs/deepgram/discussions)
-- [Join the Deepgram Discord Community](https://discord.gg/xWRaCDBtW4)
+## Security
 
-## Author
+This project implements security best practices including:
+- Dependency pinning to exact versions
+- Automated vulnerability scanning with Snyk
+- Environment variable management
 
-[Deepgram](https://deepgram.com)
+See [SECURITY.md](./.github/SECURITY.md) for complete security documentation and reporting procedures.
+
+## Contributing
+
+Contributions are welcome! Please review:
+- [Contributing Guidelines](./.github/CONTRIBUTING.md)
+- [Code of Conduct](./.github/CODE_OF_CONDUCT.md)
+- [Security Policy](./.github/SECURITY.md)
 
 ## License
 
-This project is licensed under the MIT license. See the [LICENSE](./LICENSE) file for more info.
+MIT - See [LICENSE](./LICENSE)
