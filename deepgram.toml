@@ -6,12 +6,17 @@
   language = "Python"
   framework = "Flask"
 
-[build]
-  command = "pip install -r requirements.txt"
+[pre-build]
+  command = "make init"
+  message = "Dependencies installed (Python + frontend)"
 
-[config]
+[build]
+  command = "make build"
+  message = "Build completed"
+
+[build.config]
   sample = "sample.env"
   output = ".env"
 
 [post-build]
-  message = "Run `python app.py` to get up and running."
+  message = "Run `make start` to get up and running."
