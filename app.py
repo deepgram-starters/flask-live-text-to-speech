@@ -238,11 +238,23 @@ def get_metadata():
 
 
 def run_ui():
-    app.run(debug=True, use_reloader=False)
+    port = int(os.environ.get("PORT", 8080))
+    host = os.environ.get("HOST", "0.0.0.0")
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+
+    print("\n" + "=" * 70)
+    print(f"🚀 Flask Live Text-to-Speech Server running at http://localhost:{port}")
+    print(f"📦 Serving frontend from {app.static_folder}")
+    print(f"🔌 WebSocket endpoint: ws://localhost:8081/")
+    print(f"🐞 Debug mode: {'ON' if debug else 'OFF'}")
+    print("=" * 70 + "\n")
+
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
 
 
 def run_ws():
-    with serve(hello, "localhost", 8080) as server:
+    ws_port = int(os.environ.get("WS_PORT", 8081))
+    with serve(hello, "0.0.0.0", ws_port) as server:
         server.serve_forever()
 
 
