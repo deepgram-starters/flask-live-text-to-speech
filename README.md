@@ -70,10 +70,9 @@ make start
 ## Architecture
 
 ### Backend
-- **Flask Server**: Serves static files and handles HTTP routes (port 5000)
-- **WebSocket Server**: Standalone WebSocket server (using `websockets` library) running on port 8080
+- **Flask Server**: Unified REST and WebSocket server on port 8080 (using `flask-sock`)
 - **WebSocket Proxy**: Bidirectional streaming to Deepgram's Live TTS API
-- Proxies to Vite dev server in development mode
+- Proxies to Vite dev server (port 8081) in development mode
 
 ### Frontend
 - Real-time audio streaming and playback
@@ -82,7 +81,7 @@ make start
 
 ## How It Works
 
-- **Backend** (`app.py`): Flask serves static files; standalone WebSocket server handles TTS streaming on port 8080
+- **Backend** (`app.py`): Unified Flask server handles both HTTP routes and WebSocket TTS streaming on port 8080
 - **Frontend** (`frontend/`): Vite-powered web UI (shared submodule)
 - **API**: Integrates with [Deepgram's Live Text-to-Speech API](https://developers.deepgram.com/)
 

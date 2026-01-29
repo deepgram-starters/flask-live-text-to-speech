@@ -15,6 +15,7 @@ Key Features:
 import os
 import json
 import threading
+import queue
 from flask import Flask, request, jsonify
 from flask_sock import Sock
 from flask_cors import CORS
@@ -33,7 +34,7 @@ load_dotenv(override=False)
 # CONFIGURATION
 # ============================================================================
 
-DEFAULT_MODEL = "aura-asteria-en"
+DEFAULT_MODEL = "aura-2-thalia-en"
 DEFAULT_PORT = 8080
 
 # ============================================================================
@@ -153,6 +154,7 @@ def live_tts(ws):
     # Track connection state
     connected = False
     stop_event = threading.Event()
+    audio_queue = queue.Queue()
 
     # Initialize Deepgram client
     try:
@@ -164,11 +166,11 @@ def live_tts(ws):
             print("✓ Connected to Deepgram TTS API")
 
         def on_binary_data(self, data, **kwargs):
-            """Forward binary audio data from Deepgram to client"""
+            """Queue binary audio data from Deepgram for thread-safe forwarding to client"""
             try:
-                ws.send(data)
+                audio_queue.put(data)
             except Exception as e:
-                print(f"Error sending audio data: {e}")
+                print(f"Error queueing audio data: {e}")
                 stop_event.set()
 
         def on_flush(self, flushed, **kwargs):
@@ -192,9 +194,20 @@ def live_tts(ws):
         dg_connection.on(SpeakWebSocketEvents.Close, on_close)
         dg_connection.on(SpeakWebSocketEvents.Error, on_error)
 
-        # Process messages from client
+        # Process messages from client and forward audio from Deepgram
         while not stop_event.is_set():
             try:
+                # Check for audio data from Deepgram (non-blocking)
+                try:
+                    audio_data = audio_queue.get_nowait()
+                    ws.send(audio_data)
+                except queue.Empty:
+                    pass
+                except Exception as e:
+                    print(f"Error sending audio data: {e}")
+                    stop_event.set()
+                    break
+
                 # Receive message from client (with timeout)
                 message = ws.receive(timeout=0.1)
                 if message is None:
