@@ -2,6 +2,7 @@
   title = "Flask Live Text-to-Speech Starter"
   description = "Get started using Deepgram's Live Text-to-Speech with this Flask demo app"
   author = "Deepgram DX Team <devrel@deepgram.com> (https://developers.deepgram.com)"
+  repository = "https://github.com/deepgram-starters/flask-live-text-to-speech"
   useCase = "TTS"
   language = "Python"
   framework = "Flask"
