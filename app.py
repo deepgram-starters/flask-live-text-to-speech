@@ -1,31 +1,20 @@
 """
 Flask Live Text-to-Speech Starter - Backend Server
 
-This Flask server provides a WebSocket endpoint for live text-to-speech
-powered by Deepgram's Live TTS API. It streams audio data back to the client
-in real-time as text is synthesized.
-
-Key Features:
-- WebSocket endpoint: /tts/stream
-- Accepts JSON text messages from frontend
-- Returns binary audio stream
-- Serves built frontend from frontend/dist/
+Simple WebSocket proxy to Deepgram's Live TTS API.
+Forwards all messages (JSON and binary) bidirectionally between client and Deepgram.
 """
 
 import os
 import json
 import threading
-import queue
 from flask import Flask, request, jsonify
 from flask_sock import Sock
 from flask_cors import CORS
-from deepgram import (
-    DeepgramClient,
-    SpeakWSOptions,
-    SpeakWebSocketEvents,
-)
-from dotenv import load_dotenv
+from urllib.parse import urlencode
+import websocket
 import toml
+from dotenv import load_dotenv
 
 # Load .env file (won't override existing environment variables)
 load_dotenv(override=False)
@@ -34,7 +23,7 @@ load_dotenv(override=False)
 # CONFIGURATION
 # ============================================================================
 
-DEFAULT_MODEL = "aura-2-thalia-en"
+DEFAULT_MODEL = "aura-asteria-en"
 
 # Server configuration
 CONFIG = {
@@ -128,9 +117,10 @@ def get_metadata():
 # ============================================================================
 
 @sock.route('/tts/stream')
-def live_tts(ws):
+def live_text_to_speech(ws):
     """
     WebSocket endpoint for live text-to-speech
+    Simple bidirectional proxy to Deepgram's Live TTS API
 
     Query parameters:
     - model: Deepgram TTS model (default: aura-asteria-en)
@@ -138,119 +128,125 @@ def live_tts(ws):
     - sample_rate: Sample rate in Hz (default: 48000)
     - container: Audio container format (default: none)
 
-    The client sends JSON messages with "text" field and receives binary audio data.
+    The client sends JSON text messages and receives binary audio data.
     """
     print("Client connected to /tts/stream")
 
     # Get query parameters from request
     model = request.args.get('model', DEFAULT_MODEL)
     encoding = request.args.get('encoding', 'linear16')
-    sample_rate = int(request.args.get('sample_rate', 48000))
+    sample_rate = request.args.get('sample_rate', '48000')
     container = request.args.get('container', 'none')
 
-    print(f"TTS Config - model: {model}, encoding: {encoding}, sample_rate: {sample_rate}")
+    print(f"TTS Config - model: {model}, encoding: {encoding}, sample_rate: {sample_rate}, container: {container}")
 
-    # Track connection state
-    connected = False
+    # Build Deepgram WebSocket URL with query parameters
+    deepgram_params = {
+        'model': model,
+        'encoding': encoding,
+        'sample_rate': sample_rate,
+        'container': container
+    }
+    deepgram_url = f"wss://api.deepgram.com/v1/speak?{urlencode(deepgram_params)}"
+
+    # Message counters for logging
+    client_message_count = 0
+    deepgram_message_count = 0
     stop_event = threading.Event()
-    audio_queue = queue.Queue()
+    deepgram_ready = threading.Event()
 
-    # Initialize Deepgram client
+    def on_deepgram_message(dg_ws, message):
+        """Forward messages from Deepgram to client"""
+        nonlocal deepgram_message_count
+
+        # Wait for client to be ready before forwarding
+        if not deepgram_ready.wait(timeout=5):
+            print("Timeout waiting for client to be ready")
+            stop_event.set()
+            return
+
+        deepgram_message_count += 1
+
+        # Log non-binary messages and every 10th binary message
+        if isinstance(message, str) or deepgram_message_count % 10 == 0:
+            msg_type = "JSON" if isinstance(message, str) else "binary"
+            print(f"← Deepgram {msg_type} message #{deepgram_message_count}")
+
+        try:
+            ws.send(message)
+        except Exception as e:
+            print(f"Error forwarding to client: {e}")
+            stop_event.set()
+
+    def on_deepgram_error(dg_ws, error):
+        """Handle Deepgram errors"""
+        print(f"Deepgram error: {error}")
+        stop_event.set()
+
+    def on_deepgram_close(dg_ws, close_status_code, close_msg):
+        """Handle Deepgram connection close"""
+        print(f"Deepgram connection closed: {close_status_code} {close_msg}")
+        stop_event.set()
+
+    def on_deepgram_open(dg_ws):
+        """Handle Deepgram connection open - send Open event to client"""
+        print("✓ Connected to Deepgram TTS API")
+        try:
+            # Notify client that connection is ready
+            ws.send(json.dumps({'type': 'Open'}))
+        except Exception as e:
+            print(f"Error sending Open event: {e}")
+
+    # Create WebSocket connection to Deepgram
     try:
-        deepgram = DeepgramClient(api_key=API_KEY)
-        dg_connection = deepgram.speak.websocket.v("1")
+        deepgram_ws = websocket.WebSocketApp(
+            deepgram_url,
+            header={
+                'Authorization': f'Token {API_KEY}'
+            },
+            on_open=on_deepgram_open,
+            on_message=on_deepgram_message,
+            on_error=on_deepgram_error,
+            on_close=on_deepgram_close
+        )
 
-        # Event handlers for Deepgram connection
-        def on_open(self, open_event, **kwargs):
-            print("✓ Connected to Deepgram TTS API")
+        # Run Deepgram WebSocket in background thread
+        dg_thread = threading.Thread(target=deepgram_ws.run_forever)
+        dg_thread.daemon = True
+        dg_thread.start()
 
-        def on_binary_data(self, data, **kwargs):
-            """Queue binary audio data from Deepgram for thread-safe forwarding to client"""
-            try:
-                audio_queue.put(data)
-            except Exception as e:
-                print(f"Error queueing audio data: {e}")
-                stop_event.set()
+        # Wait a moment for Deepgram connection to initialize
+        import time
+        time.sleep(0.1)
 
-        def on_flush(self, flushed, **kwargs):
-            """Handle flush events from Deepgram"""
-            print(f"Flushed: {flushed}")
+        # Signal that we're ready to receive Deepgram messages
+        deepgram_ready.set()
+        print("✓ Ready to forward messages")
 
-        def on_close(self, close_event, **kwargs):
-            """Handle Deepgram connection close"""
-            print("Deepgram TTS connection closed")
-            stop_event.set()
-
-        def on_error(self, error, **kwargs):
-            """Handle errors from Deepgram"""
-            print(f"Deepgram TTS error: {error}")
-            stop_event.set()
-
-        # Register event handlers
-        dg_connection.on(SpeakWebSocketEvents.Open, on_open)
-        dg_connection.on(SpeakWebSocketEvents.AudioData, on_binary_data)
-        dg_connection.on(SpeakWebSocketEvents.Flushed, on_flush)
-        dg_connection.on(SpeakWebSocketEvents.Close, on_close)
-        dg_connection.on(SpeakWebSocketEvents.Error, on_error)
-
-        # Process messages from client and forward audio from Deepgram
+        # Forward messages from client to Deepgram
         while not stop_event.is_set():
             try:
-                # Check for audio data from Deepgram (non-blocking)
-                try:
-                    audio_data = audio_queue.get_nowait()
-                    ws.send(audio_data)
-                except queue.Empty:
-                    pass
-                except Exception as e:
-                    print(f"Error sending audio data: {e}")
-                    stop_event.set()
-                    break
-
                 # Receive message from client (with timeout)
                 message = ws.receive(timeout=0.1)
                 if message is None:
                     continue
 
-                print(f"Received from client: {message[:100]}...")
+                client_message_count += 1
 
-                # Parse JSON message
-                try:
-                    data = json.loads(message)
-                    text = data.get('text')
-                    msg_model = data.get('model', model)
+                # Log JSON messages and every 100th binary message
+                if isinstance(message, str) or client_message_count % 100 == 0:
+                    msg_type = "JSON" if isinstance(message, str) else "binary"
+                    print(f"→ Client {msg_type} message #{client_message_count}")
 
-                    if not text:
-                        print("No text provided in message")
-                        continue
-
-                    # Start connection if not already connected
-                    if not connected:
-                        options = SpeakWSOptions(
-                            model=msg_model,
-                            encoding=encoding,
-                            sample_rate=sample_rate,
-                        )
-
-                        if not dg_connection.start(options):
-                            print("Failed to start Deepgram TTS connection")
-                            ws.close(1011, "Failed to connect to Deepgram")
-                            break
-
-                        connected = True
-                        print(f"✓ Started Deepgram TTS connection with model: {msg_model}")
-
-                    # Send text to Deepgram
-                    dg_connection.send_text(text)
-                    dg_connection.flush()
-
-                except json.JSONDecodeError:
-                    print(f"Invalid JSON received: {message}")
-                    continue
+                # Forward to Deepgram
+                if isinstance(message, bytes):
+                    deepgram_ws.send(message, opcode=websocket.ABNF.OPCODE_BINARY)
+                else:
+                    deepgram_ws.send(message)
 
             except Exception as e:
                 if "timeout" not in str(e).lower():
-                    print(f"Error in message loop: {e}")
+                    print(f"Error in client message loop: {e}")
                     break
 
     except Exception as e:
@@ -264,11 +260,11 @@ def live_tts(ws):
     finally:
         # Cleanup
         print("Cleaning up TTS connection")
+        stop_event.set()
         try:
-            if connected:
-                dg_connection.finish()
+            deepgram_ws.close()
         except Exception as e:
-            print(f"Error finishing connection: {e}")
+            print(f"Error closing Deepgram connection: {e}")
 
         print("Client disconnected from /tts/stream")
 
@@ -283,7 +279,7 @@ if __name__ == "__main__":
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
     print("\n" + "=" * 70)
-    print(f"🚀 Flask Live Text To Speech Server (Backend API)")
+    print(f"🚀 Flask Live Text-to-Speech Server (Backend API)")
     print("=" * 70)
     print(f"Backend:  http://localhost:{port}")
     print(f"Frontend: http://localhost:{frontend_port}")
