@@ -186,13 +186,8 @@ def live_text_to_speech(ws):
         stop_event.set()
 
     def on_deepgram_open(dg_ws):
-        """Handle Deepgram connection open - send Open event to client"""
+        """Handle Deepgram connection open"""
         print("✓ Connected to Deepgram TTS API")
-        try:
-            # Notify client that connection is ready
-            ws.send(json.dumps({'type': 'Open'}))
-        except Exception as e:
-            print(f"Error sending Open event: {e}")
 
     # Create WebSocket connection to Deepgram
     try:
